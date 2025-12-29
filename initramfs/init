@@ -1,0 +1,115 @@
+#!/bin/busybox sh
+#
+# Palpable Bootstrap Init Script
+# This runs as PID 1 from the initramfs
+#
+
+# Mount essential filesystems
+/bin/busybox --install -s /bin
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+# Parse kernel command line
+BOOT_DEV=""
+for x in $(cat /proc/cmdline); do
+    case "$x" in
+        boot=*) BOOT_DEV="${x#boot=}" ;;
+    esac
+done
+
+# Source helper functions
+. /lib/logging.sh
+. /lib/network.sh
+. /lib/config.sh
+. /lib/installer.sh
+
+log_info "Palpable Bootstrap starting..."
+
+# Mount boot partition
+log_step "Mounting boot partition"
+mkdir -p /boot
+if [ -n "$BOOT_DEV" ]; then
+    mount "$BOOT_DEV" /boot
+else
+    # Try common locations
+    for dev in /dev/mmcblk0p1 /dev/sda1; do
+        if mount "$dev" /boot 2>/dev/null; then
+            break
+        fi
+    done
+fi
+
+if ! mountpoint -q /boot; then
+    log_error "Failed to mount boot partition"
+    exec /bin/sh
+fi
+
+log_ok "Boot partition mounted"
+
+# Load user settings
+load_settings
+
+# Generate unique device ID if not exists
+if [ ! -f /boot/device-id.txt ]; then
+    DEVICE_ID=$(cat /proc/sys/kernel/random/uuid | cut -d'-' -f1-2)
+    echo "$DEVICE_ID" > /boot/device-id.txt
+    log_info "Generated device ID: $DEVICE_ID"
+else
+    DEVICE_ID=$(cat /boot/device-id.txt)
+fi
+
+# Check if we have WiFi configured
+if [ -n "$WIFI_SSID" ]; then
+    log_step "Connecting to WiFi: $WIFI_SSID"
+    if connect_wifi "$WIFI_SSID" "$WIFI_PASSWORD" "$WIFI_COUNTRY"; then
+        log_ok "WiFi connected"
+        WIFI_MODE="client"
+    else
+        log_warning "WiFi connection failed, starting hotspot"
+        start_hotspot
+        WIFI_MODE="hotspot"
+    fi
+else
+    log_info "No WiFi configured, starting hotspot"
+    start_hotspot
+    WIFI_MODE="hotspot"
+fi
+
+# Start services based on mode
+if [ "$WIFI_MODE" = "hotspot" ]; then
+    # Start captive portal
+    log_step "Starting captive portal"
+    start_captive_portal
+    log_ok "Captive portal available at http://192.168.4.1"
+fi
+
+# Start Bluetooth LE beacon for app discovery
+log_step "Starting Bluetooth beacon"
+start_bluetooth_beacon "$DEVICE_ID"
+
+# Install Palpable OS if connected to WiFi and not already installed
+if [ "$WIFI_MODE" = "client" ]; then
+    if [ ! -f /boot/palpable-status.txt ] || ! grep -q "installed" /boot/palpable-status.txt; then
+        log_step "Installing Palpable OS from GitHub..."
+        run_full_install
+    else
+        log_ok "Palpable OS already installed"
+    fi
+
+    # Check for OTA updates
+    log_step "Checking for updates"
+    check_for_updates &
+fi
+
+# Start main services
+log_step "Starting Palpable services"
+/init.d/S50-palpable-agent &
+
+log_info "Bootstrap complete!"
+
+# Keep running
+while true; do
+    sleep 60
+    # Heartbeat/watchdog logic here
+done

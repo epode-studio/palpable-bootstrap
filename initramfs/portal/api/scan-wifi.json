@@ -1,0 +1,5 @@
+[
+    {"ssid": "MyHomeNetwork", "signal": 85},
+    {"ssid": "Neighbor's WiFi", "signal": 60},
+    {"ssid": "Coffee Shop", "signal": 45}
+]

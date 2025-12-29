@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Build environment for creating the bootstrap image
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/work
+    working_dir: /work
+    command: bash -c "echo 'Builder ready. Run: ./build.sh'"
+
+  # QEMU environment for testing the image
+  # Simulates Raspberry Pi Zero 2 W (Cortex-A53, 512MB RAM)
+  qemu-test:
+    image: qemu/aarch64
+    privileged: true
+    volumes:
+      - ../dist:/images:ro
+    ports:
+      - "5555:22"    # SSH
+      - "8080:80"    # HTTP (captive portal)
+    command: >
+      qemu-system-aarch64
+        -machine virt
+        -cpu cortex-a53
+        -smp 4
+        -m 512
+        -kernel /images/kernel8.img
+        -initrd /images/initramfs.cpio.gz
+        -append "console=ttyAMA0 root=/dev/ram0"
+        -nographic

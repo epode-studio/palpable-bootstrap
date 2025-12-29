@@ -1,0 +1,9 @@
+{
+    "deviceId": "test-1234",
+    "deviceName": "palpable-test",
+    "version": "1.0.0",
+    "ip": "192.168.4.1",
+    "mac": "00:11:22:33:44:55",
+    "wifiMode": "hotspot",
+    "wifiSsid": ""
+}

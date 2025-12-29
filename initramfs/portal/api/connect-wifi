@@ -1,0 +1,104 @@
+#!/bin/sh
+#
+# API: Connect to WiFi network
+# POST body: {"ssid": "...", "password": "..."}
+#
+
+echo "Content-Type: application/json"
+echo ""
+
+# Read POST data
+read -r POST_DATA
+
+# Parse JSON (simple extraction)
+ssid=$(echo "$POST_DATA" | sed -n 's/.*"ssid"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+password=$(echo "$POST_DATA" | sed -n 's/.*"password"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+if [ -z "$ssid" ]; then
+    echo '{"success": false, "error": "SSID is required"}'
+    exit 0
+fi
+
+# Get country from settings or default to US
+country=$(grep "^WIFI_COUNTRY=" /boot/settings.txt 2>/dev/null | cut -d= -f2)
+[ -z "$country" ] && country="US"
+
+# Stop current hotspot
+killall hostapd 2>/dev/null
+killall dnsmasq 2>/dev/null
+sleep 1
+
+# Create wpa_supplicant config
+WPA_CONF="/tmp/wpa_supplicant.conf"
+
+if [ -n "$password" ]; then
+    cat > "$WPA_CONF" << EOF
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+country=$country
+
+network={
+    ssid="$ssid"
+    psk="$password"
+    key_mgmt=WPA-PSK
+}
+EOF
+else
+    cat > "$WPA_CONF" << EOF
+ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+country=$country
+
+network={
+    ssid="$ssid"
+    key_mgmt=NONE
+}
+EOF
+fi
+
+# Stop existing wpa_supplicant
+wpa_cli -i wlan0 terminate 2>/dev/null
+sleep 1
+
+# Bring up interface
+ip link set wlan0 up
+ip addr flush dev wlan0
+
+# Start wpa_supplicant
+mkdir -p /var/run/wpa_supplicant
+wpa_supplicant -B -i wlan0 -c "$WPA_CONF" -D nl80211
+
+# Wait for connection (up to 15 seconds)
+connected=false
+for i in $(seq 1 15); do
+    if wpa_cli -i wlan0 status 2>/dev/null | grep -q "wpa_state=COMPLETED"; then
+        connected=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$connected" = "false" ]; then
+    # Connection failed, restart hotspot
+    wpa_cli -i wlan0 terminate 2>/dev/null
+    . /lib/network.sh
+    start_hotspot
+    echo '{"success": false, "error": "Could not connect to network"}'
+    exit 0
+fi
+
+# Get IP via DHCP
+udhcpc -i wlan0 -q -t 10 -n
+
+# Save settings for next boot
+sed -i "s/^WIFI_SSID=.*/WIFI_SSID=$ssid/" /boot/settings.txt 2>/dev/null
+sed -i "s/^WIFI_PASSWORD=.*/WIFI_PASSWORD=$password/" /boot/settings.txt 2>/dev/null
+
+# Verify we have an IP
+ip_addr=$(ip -4 addr show wlan0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
+
+if [ -n "$ip_addr" ]; then
+    echo "{\"success\": true, \"ip\": \"$ip_addr\"}"
+else
+    echo '{"success": false, "error": "Connected but no IP address"}'
+fi

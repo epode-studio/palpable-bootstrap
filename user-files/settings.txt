@@ -1,0 +1,35 @@
+# ============================================================================
+# PALPABLE DEVICE SETTINGS
+# ============================================================================
+# Edit this file, then copy the boot folder to your SD card.
+# Lines starting with # are comments and will be ignored.
+# ============================================================================
+
+# WIFI CONFIGURATION
+# ------------------
+# Your home WiFi network name (case-sensitive)
+WIFI_SSID=
+
+# Your WiFi password (leave empty for open networks)
+WIFI_PASSWORD=
+
+# Country code for WiFi regulations (US, GB, DE, FR, AU, JP, etc.)
+WIFI_COUNTRY=US
+
+# DEVICE SETTINGS
+# ---------------
+# Give your device a friendly name (letters, numbers, hyphens only)
+DEVICE_NAME=palpable
+
+# ADVANCED (usually don't need to change)
+# ---------------------------------------
+# Static IP address (leave empty for DHCP)
+# IP_ADDRESS=192.168.1.100
+
+# Timezone (e.g., America/New_York, Europe/London, Asia/Tokyo)
+TIMEZONE=UTC
+
+# ============================================================================
+# After editing, copy the boot folder contents to your SD card.
+# Your Pi will read these settings on first boot.
+# ============================================================================

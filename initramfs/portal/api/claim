@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# API: Claim device with 6-digit code
+# POST body: {"code": "123456", "deviceId": "..."}
+#
+
+echo "Content-Type: application/json"
+echo ""
+
+# Read POST data
+read -r POST_DATA
+
+# Parse JSON
+code=$(echo "$POST_DATA" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+device_id=$(echo "$POST_DATA" | sed -n 's/.*"deviceId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+if [ -z "$code" ] || [ -z "$device_id" ]; then
+    echo '{"success": false, "error": "Code and deviceId are required"}'
+    exit 0
+fi
+
+# Validate code format (6 digits)
+if ! echo "$code" | grep -qE '^[0-9]{6}$'; then
+    echo '{"success": false, "error": "Invalid code format"}'
+    exit 0
+fi
+
+# Call the Palpable API to verify the claim code
+API_URL="https://api.palpable.technology/devices/claim"
+
+response=$(wget -q -O - --post-data="{\"code\": \"$code\", \"deviceId\": \"$device_id\"}" \
+    --header="Content-Type: application/json" \
+    "$API_URL" 2>/dev/null)
+
+# Check if claim was successful
+if echo "$response" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+    # Extract claim token
+    claim_token=$(echo "$response" | sed -n 's/.*"claimToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    user_id=$(echo "$response" | sed -n 's/.*"userId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+    # Save claim info to boot partition
+    cat > /boot/claim.json << EOF
+{
+    "claimToken": "$claim_token",
+    "userId": "$user_id",
+    "deviceId": "$device_id",
+    "claimedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+    sync
+
+    echo '{"success": true}'
+else
+    # Extract error message
+    error=$(echo "$response" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -z "$error" ] && error="Invalid or expired code"
+
+    echo "{\"success\": false, \"error\": \"$error\"}"
+fi

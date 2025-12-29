@@ -1,0 +1,54 @@
+================================================================================
+                           PALPABLE OS - QUICK START
+================================================================================
+
+Welcome! You're holding the easiest way to set up your Palpable device.
+
+WHAT TO DO:
+
+1. EDIT SETTINGS (optional)
+   Open "settings.txt" in this folder and fill in your WiFi details.
+   If you skip this, your Pi will create a WiFi hotspot for setup.
+
+2. COPY FILES TO SD CARD
+   Copy the entire "boot" folder contents to an SD card formatted as FAT32.
+   On Mac: Use Disk Utility > Erase > Format: MS-DOS (FAT)
+   On Windows: Right-click drive > Format > FAT32
+
+3. INSERT & POWER ON
+   Put the SD card in your Raspberry Pi and plug in power.
+   Wait ~60 seconds for first boot.
+
+4. CONNECT
+   - If you configured WiFi: Your Pi should appear in the Palpable app
+   - If no WiFi: Connect to "Palpable-XXXX" WiFi network
+     Then open http://palpable.local or http://192.168.4.1
+
+THAT'S IT!
+
+--------------------------------------------------------------------------------
+TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+Pi won't boot?
+  - Make sure you're using a Raspberry Pi 4 or 5
+  - Try a different SD card (8GB+ recommended)
+  - Ensure files are in root of SD card, not in a subfolder
+
+Can't find WiFi hotspot?
+  - Wait 2 minutes after powering on
+  - Make sure no ethernet cable is connected
+  - Look for network starting with "Palpable-"
+
+Captive portal not loading?
+  - Try http://192.168.4.1 directly
+  - Disable mobile data on your phone
+  - Try a different device
+
+Need help?
+  - Discord: https://discord.gg/NDrEg5dC
+  - Email: support@palpable.technology
+
+================================================================================
+                         https://palpable.technology
+================================================================================
