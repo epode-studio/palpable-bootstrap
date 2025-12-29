@@ -1,0 +1,109 @@
+name: Build and Release Bootstrap
+
+on:
+  # Rebuild when Palpable OS releases a new version
+  repository_dispatch:
+    types: [palpable-os-release]
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.1)'
+        required: false
+        default: ''
+
+  # Also rebuild on push to main
+  push:
+    branches: [main]
+    paths:
+      - 'initramfs/**'
+      - 'build.sh'
+      - 'user-files/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build Bootstrap
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            alpine:3.19 \
+            sh -c "
+              apk add --no-cache curl cpio gzip bash zip findutils coreutils tar xz &&
+              bash /work/build.sh
+            "
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(cat user-files/version.txt | head -1)
+            TIMESTAMP=$(date +%Y%m%d%H%M)
+            echo "version=v${VERSION}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Palpable Bootstrap ${{ steps.version.outputs.version }}
+          body: |
+            ## Palpable Bootstrap
+
+            **One zip file. No flashing tools. Works on any computer.**
+
+            ### Quick Setup
+            1. Download and unzip
+            2. Copy ALL files to a FAT32 SD card
+            3. Insert SD card in Raspberry Pi Zero 2 W
+            4. Power on and connect to "Palpable-XXXX" WiFi
+
+            ### Included Palpable OS
+            Version: $(cat dist/palpable-os-version.txt 2>/dev/null || echo "latest")
+
+            Built: $(date -u +"%Y-%m-%d %H:%M UTC")
+          files: |
+            dist/palpable-bootstrap.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update latest release
+        run: |
+          # Delete existing v1.0.0 tag and recreate
+          gh release delete v1.0.0 --yes || true
+          gh release create v1.0.0 dist/palpable-bootstrap.zip \
+            --title "Palpable Bootstrap v1.0.0 (Latest)" \
+            --notes "## Palpable Bootstrap - Latest Build
+
+          **One zip file. No flashing tools. Works on any computer.**
+
+          ### Quick Setup
+          1. Download and unzip
+          2. Copy ALL files to a FAT32 SD card
+          3. Insert SD card in Raspberry Pi Zero 2 W
+          4. Power on and connect to \"Palpable-XXXX\" WiFi
+
+          **Bundled Palpable OS:** $(cat dist/palpable-os-version.txt 2>/dev/null || echo 'latest')
+
+          **Built:** $(date -u +'%Y-%m-%d %H:%M UTC')"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
