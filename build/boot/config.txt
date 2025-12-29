@@ -1,0 +1,26 @@
+# Palpable Bootstrap Configuration
+# Optimized for Raspberry Pi Zero 2 W
+
+# Enable 64-bit mode
+arm_64bit=1
+
+# Kernel and initramfs
+kernel=kernel8.img
+initramfs initramfs.cpio.gz followkernel
+
+# Enable UART for debugging (uses mini UART on GPIO 14/15)
+enable_uart=1
+
+# GPU memory (minimal for headless operation)
+gpu_mem=16
+
+# Disable splash screen for faster boot
+disable_splash=1
+
+# Faster boot
+boot_delay=0
+initial_turbo=30
+
+# Over-clocking for Pi Zero 2 W (optional, conservative values)
+# arm_freq=1200
+# over_voltage=2

@@ -1,0 +1,12 @@
+alpine-baselayout
+alpine-keys
+apk-tools
+busybox
+dnsmasq
+hostapd
+iw
+libc-utils
+libnl3
+openssl
+wireless-tools
+wpa_supplicant

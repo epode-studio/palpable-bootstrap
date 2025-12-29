@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# API: Reboot the device
+# POST request (no body needed)
+#
+
+echo "Content-Type: application/json"
+echo ""
+echo '{"success": true, "message": "Rebooting..."}'
+
+# Give time for response to be sent
+sleep 1
+
+# Sync filesystem
+sync
+
+# Reboot
+reboot -f

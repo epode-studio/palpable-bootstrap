@@ -3,13 +3,17 @@ version: '3.8'
 services:
   # Build environment for creating the bootstrap image
   builder:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    platform: linux/arm64
+    image: alpine:3.19
+    user: root
     volumes:
       - ..:/work
     working_dir: /work
-    command: bash -c "echo 'Builder ready. Run: ./build.sh'"
+    command: >
+      sh -c "
+        apk add --no-cache curl cpio gzip bash zip findutils coreutils tar xz &&
+        bash /work/build.sh
+      "
 
   # QEMU environment for testing the image
   # Simulates Raspberry Pi Zero 2 W (Cortex-A53, 512MB RAM)

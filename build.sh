@@ -52,6 +52,7 @@ print_step() { echo -e "${CYAN}▸${NC} $1"; }
 print_ok() { echo -e "${GREEN}✓${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 print_warning() { echo -e "${YELLOW}!${NC} $1"; }
+print_info() { echo -e "${CYAN}  ${NC} $1"; }
 
 # Check if running in Docker or has required tools
 check_requirements() {
@@ -162,34 +163,31 @@ build_initramfs_base() {
     local alpine_url="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/alpine-minirootfs-${ALPINE_VERSION}.0-${ALPINE_ARCH}.tar.gz"
 
     print_step "  Downloading Alpine minirootfs..."
+    curl -fsSL "$alpine_url" | tar --no-same-owner --no-same-permissions -xzf - -C "$rootfs" 2>/dev/null || \
     curl -fsSL "$alpine_url" | tar -xzf - -C "$rootfs"
 
-    # Install additional packages using apk (if running on Alpine/Docker)
-    if command -v apk &>/dev/null && [ -f /etc/alpine-release ]; then
-        print_step "  Installing packages..."
+    # Install additional packages using apk --root (works in Docker)
+    if command -v apk &>/dev/null; then
+        print_step "  Installing packages to initramfs..."
 
-        # Mount required filesystems
-        mount --bind /dev "$rootfs/dev" 2>/dev/null || true
-        mount -t proc proc "$rootfs/proc" 2>/dev/null || true
+        # Initialize apk in the rootfs
+        mkdir -p "$rootfs/etc/apk"
+        cp /etc/apk/repositories "$rootfs/etc/apk/" 2>/dev/null || \
+            echo "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/main" > "$rootfs/etc/apk/repositories"
 
-        # Install packages
-        chroot "$rootfs" apk add --no-cache \
+        # Install packages directly to rootfs
+        apk --root "$rootfs" --initdb add --no-cache \
             busybox \
             wpa_supplicant \
             hostapd \
             dnsmasq \
             wireless-tools \
             iw \
-            bluez \
-            bluez-deprecated \
-            dropbear \
-            2>/dev/null || print_warning "Could not install packages (may need Docker)"
-
-        # Unmount
-        umount "$rootfs/proc" 2>/dev/null || true
-        umount "$rootfs/dev" 2>/dev/null || true
+            libnl3 \
+            openssl \
+            2>/dev/null && print_ok "Packages installed" || print_warning "Some packages may have failed"
     else
-        print_warning "Cannot install packages outside Docker - base system only"
+        print_warning "Cannot install packages outside Alpine/Docker"
     fi
 
     print_ok "Initramfs base ready"
@@ -290,6 +288,7 @@ assemble_boot() {
     cp "$boot_dir/"*.dtb "$DIST_DIR/" 2>/dev/null || true
     cp "$boot_dir/"*.elf "$DIST_DIR/" 2>/dev/null || true
     cp "$boot_dir/"*.dat "$DIST_DIR/" 2>/dev/null || true
+    cp "$boot_dir/"*.bin "$DIST_DIR/" 2>/dev/null || true
     cp "$boot_dir/config.txt" "$DIST_DIR/"
     cp "$boot_dir/cmdline.txt" "$DIST_DIR/"
 
@@ -314,41 +313,49 @@ assemble_boot() {
 create_zip() {
     print_step "Creating distribution zip..."
 
+    local version=$(cat "$USER_FILES_DIR/version.txt" 2>/dev/null | head -1 || echo "1.0.0")
+    local output="palpable-bootstrap.zip"
+
     cd "$DIST_DIR"
 
-    # Create boot folder for user
-    mkdir -p boot
-    cp *.img *.dtb *.elf *.dat *.txt *.gz boot/ 2>/dev/null || true
+    # Create the zip with all boot files at root level
+    # Users will drag all files directly to SD card
+    zip -j "$output" \
+        bootcode.bin \
+        start.elf \
+        fixup.dat \
+        kernel8.img \
+        bcm2710-rpi-zero-2-w.dtb \
+        config.txt \
+        cmdline.txt \
+        initramfs.cpio.gz \
+        settings.txt \
+        "START HERE.txt" \
+        version.txt \
+        2>/dev/null || true
 
-    # Add README
-    cat > boot/README.txt << EOF
-PALPABLE OS BOOT FILES
-======================
+    # Add README inside zip
+    cat > /tmp/README.txt << 'EOF'
+PALPABLE BOOTSTRAP
+==================
 
-Copy ALL files from this folder to a FAT32-formatted SD card.
+Copy ALL files to your SD card (FAT32 formatted).
 
 Quick setup:
-1. Edit settings.txt to add your WiFi
+1. (Optional) Edit settings.txt to add your WiFi
 2. Copy all files to SD card root
-3. Insert in Raspberry Pi and power on
+3. Insert SD card in Raspberry Pi Zero 2 W
+4. Power on and wait ~60 seconds
+5. Connect to "Palpable-XXXX" WiFi network
+6. Follow the setup wizard
 
 For help: https://palpable.technology/download
 EOF
+    zip -j "$output" /tmp/README.txt 2>/dev/null || true
 
-    # Copy START HERE
-    cp "$USER_FILES_DIR/START HERE.txt" ./
-
-    # Create zip
     cd "$SCRIPT_DIR"
-    zip -r "$DIST_DIR/$OUTPUT_ZIP" \
-        -j "$DIST_DIR/boot/" \
-        "$USER_FILES_DIR/START HERE.txt" \
-        "$USER_FILES_DIR/settings.txt"
 
-    # Cleanup
-    rm -rf "$DIST_DIR/boot"
-
-    print_ok "Distribution zip created: $OUTPUT_ZIP"
+    print_ok "Distribution zip created: $DIST_DIR/$output ($(du -h "$DIST_DIR/$output" | cut -f1))"
 }
 
 # Print summary
@@ -391,6 +398,11 @@ main() {
             add_palpable_files
             create_initramfs
             assemble_boot
+            # Copy user files to dist
+            cp "$USER_FILES_DIR/settings.txt" "$DIST_DIR/"
+            cp "$USER_FILES_DIR/START HERE.txt" "$DIST_DIR/"
+            cp "$USER_FILES_DIR/version.txt" "$DIST_DIR/"
+            create_zip
             print_summary
             ;;
     esac

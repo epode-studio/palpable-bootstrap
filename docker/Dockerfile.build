@@ -1,0 +1,52 @@
+# Dockerfile.build — Build environment for Palpable Bootstrap initramfs
+# Uses QEMU to run aarch64 binaries on x86/ARM Mac
+
+FROM --platform=linux/arm64 alpine:3.19
+
+# Install build dependencies and runtime packages
+RUN apk add --no-cache \
+    # Core utilities
+    busybox-extras \
+    coreutils \
+    findutils \
+    # Networking
+    wpa_supplicant \
+    hostapd \
+    dnsmasq \
+    iw \
+    wireless-tools \
+    # HTTP server
+    lighttpd \
+    # Utilities
+    curl \
+    jq \
+    xxd \
+    # Compression
+    cpio \
+    gzip \
+    # Bluetooth (optional, skip if too large)
+    # bluez \
+    && rm -rf /var/cache/apk/*
+
+# Create initramfs structure
+WORKDIR /initramfs
+
+# Copy the base system
+RUN mkdir -p /initramfs-root && \
+    cp -a /bin /initramfs-root/ && \
+    cp -a /sbin /initramfs-root/ && \
+    cp -a /lib /initramfs-root/ && \
+    cp -a /usr /initramfs-root/ && \
+    mkdir -p /initramfs-root/{proc,sys,dev,tmp,mnt,boot,etc,var,run} && \
+    mkdir -p /initramfs-root/etc/wpa_supplicant && \
+    mkdir -p /initramfs-root/var/run && \
+    mkdir -p /initramfs-root/www && \
+    mkdir -p /initramfs-root/scripts
+
+# Copy config files
+RUN cp /etc/passwd /initramfs-root/etc/ && \
+    cp /etc/group /initramfs-root/etc/ && \
+    cp /etc/hosts /initramfs-root/etc/ 2>/dev/null || echo "127.0.0.1 localhost" > /initramfs-root/etc/hosts
+
+WORKDIR /build
+CMD ["/bin/sh"]
