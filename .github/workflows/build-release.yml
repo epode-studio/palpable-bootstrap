@@ -75,8 +75,8 @@ jobs:
             3. Insert SD card in Raspberry Pi Zero 2 W
             4. Power on and connect to "Palpable-XXXX" WiFi
 
-            ### Included Palpable OS
-            Version: $(cat dist/palpable-os-version.txt 2>/dev/null || echo "latest")
+            ### Bundled Palpable Runtime
+            Version: $(cat dist/palpable-runtime-version.txt 2>/dev/null || echo "downloads at boot")
 
             Built: $(date -u +"%Y-%m-%d %H:%M UTC")
           files: |
@@ -102,7 +102,7 @@ jobs:
           3. Insert SD card in Raspberry Pi Zero 2 W
           4. Power on and connect to \"Palpable-XXXX\" WiFi
 
-          **Bundled Palpable OS:** $(cat dist/palpable-os-version.txt 2>/dev/null || echo 'latest')
+          **Bundled Palpable Runtime:** $(cat dist/palpable-runtime-version.txt 2>/dev/null || echo 'downloads at boot')
 
           **Built:** $(date -u +'%Y-%m-%d %H:%M UTC')"
         env:

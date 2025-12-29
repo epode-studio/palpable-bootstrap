@@ -1,16 +1,17 @@
 #!/bin/sh
 #
-# Palpable OS Installer
-# Downloads and installs Palpable OS from GitHub releases
+# Palpable Runtime Installer
+# Downloads and installs the Palpable runtime from GitHub
 #
 
-PALPABLE_REPO="epode-studio/palpable-os"
+# Main palpable repo contains palpable-runtime folder
+PALPABLE_REPO="epode-studio/palpable"
 PALPABLE_DIR="/opt/palpable"
 DOWNLOAD_DIR="/tmp/palpable-download"
 
-# Download and install Palpable OS from GitHub
+# Download and install Palpable runtime from GitHub
 install_palpable_os() {
-    log_step "Installing Palpable OS..."
+    log_step "Installing Palpable runtime..."
 
     mkdir -p "$DOWNLOAD_DIR"
     mkdir -p "$PALPABLE_DIR"
@@ -18,75 +19,78 @@ install_palpable_os() {
     local tarball=""
     local version="unknown"
 
-    # First, check for bundled Palpable OS on boot partition (offline install)
-    if [ -f /boot/palpable-os.tar.gz ]; then
-        log_info "Using bundled Palpable OS (offline install)"
-        tarball="/boot/palpable-os.tar.gz"
-        version=$(cat /boot/palpable-os-version.txt 2>/dev/null || echo "bundled")
-    else
-        # Download from GitHub
-        log_info "Fetching latest release info..."
-        local release_url="https://api.github.com/repos/${PALPABLE_REPO}/releases/latest"
-        local release_json=$(wget -q -O - "$release_url" 2>/dev/null)
+    # First, check for bundled runtime on boot partition (offline install)
+    if [ -f /boot/palpable-runtime.tar.gz ]; then
+        log_info "Using bundled Palpable runtime (offline install)"
+        tarball="/boot/palpable-runtime.tar.gz"
+        version=$(cat /boot/palpable-runtime-version.txt 2>/dev/null || echo "bundled")
 
-        if [ -z "$release_json" ]; then
-            log_warning "Could not fetch release info, using main branch..."
-            install_from_main_branch
-            return $?
-        fi
-
-        # Extract download URL for tarball
-        local tag=$(echo "$release_json" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-        local download_url=$(echo "$release_json" | grep '"browser_download_url"' | grep 'palpable-runtime' | head -1 | cut -d'"' -f4)
-
-        if [ -z "$download_url" ]; then
-            # Fallback to tarball
-            download_url="https://github.com/${PALPABLE_REPO}/archive/refs/tags/${tag}.tar.gz"
-        fi
-
-        log_info "Downloading Palpable OS $tag..."
-        log_debug "URL: $download_url"
-
-        if wget -q -O "$DOWNLOAD_DIR/palpable.tar.gz" "$download_url"; then
-            tarball="$DOWNLOAD_DIR/palpable.tar.gz"
-            version="$tag"
-            log_ok "Download complete"
-        else
-            log_warning "Download failed, trying main branch..."
-            install_from_main_branch
-            return $?
-        fi
+        # Extract bundled runtime directly
+        cd "$PALPABLE_DIR"
+        tar xzf "$tarball" --strip-components=1 2>/dev/null || \
+        tar xzf "$tarball" -C . 2>/dev/null
+        log_ok "Palpable runtime installed (version: $version)"
+        return 0
     fi
 
-    # Extract
-    log_step "Extracting Palpable OS $version..."
-    cd "$PALPABLE_DIR"
-    tar xzf "$tarball" --strip-components=1 2>/dev/null || \
-    tar xzf "$tarball" --strip-components=2 -C . 2>/dev/null
+    # Download from GitHub - get the main repo and extract palpable-runtime
+    log_info "Fetching latest release info..."
+    local release_url="https://api.github.com/repos/${PALPABLE_REPO}/releases/latest"
+    local release_json=$(wget -q -O - "$release_url" 2>/dev/null)
 
-    # Cleanup downloaded file (but not bundled)
-    [ -d "$DOWNLOAD_DIR" ] && rm -rf "$DOWNLOAD_DIR"
+    local tag=""
+    local download_url=""
 
-    log_ok "Palpable OS installed (version: $version)"
+    if [ -n "$release_json" ]; then
+        tag=$(echo "$release_json" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+        # Check for a palpable-runtime release asset
+        download_url=$(echo "$release_json" | grep '"browser_download_url"' | grep 'palpable-runtime' | head -1 | cut -d'"' -f4)
+    fi
+
+    if [ -z "$download_url" ]; then
+        # Fallback to main branch source tarball
+        log_info "Downloading from main branch..."
+        download_url="https://github.com/${PALPABLE_REPO}/archive/refs/heads/main.tar.gz"
+        tag="main"
+    fi
+
+    log_info "Downloading Palpable runtime ($tag)..."
+
+    if wget -q -O "$DOWNLOAD_DIR/palpable.tar.gz" "$download_url"; then
+        tarball="$DOWNLOAD_DIR/palpable.tar.gz"
+        version="$tag"
+        log_ok "Download complete"
+    else
+        log_error "Failed to download Palpable runtime"
+        return 1
+    fi
+
+    # Extract palpable-runtime subfolder from the main repo archive
+    log_step "Extracting Palpable runtime $version..."
+    cd "$DOWNLOAD_DIR"
+    tar xzf "$tarball"
+
+    # Find and copy the palpable-runtime directory
+    local runtime_src=$(find . -type d -name "palpable-runtime" | head -1)
+    if [ -n "$runtime_src" ] && [ -d "$runtime_src" ]; then
+        cp -r "$runtime_src"/* "$PALPABLE_DIR/"
+        log_ok "Palpable runtime installed (version: $version)"
+    else
+        # If no palpable-runtime folder, assume root is the runtime
+        tar xzf "$tarball" --strip-components=1 -C "$PALPABLE_DIR" 2>/dev/null
+        log_ok "Palpable installed (version: $version)"
+    fi
+
+    # Cleanup
+    rm -rf "$DOWNLOAD_DIR"
     return 0
 }
 
-# Fallback: Install from main branch
+# Fallback: Install from main branch (deprecated, use install_palpable_os)
 install_from_main_branch() {
     log_step "Downloading from main branch..."
-
-    local url="https://github.com/${PALPABLE_REPO}/archive/refs/heads/main.tar.gz"
-
-    if wget -q -O "$DOWNLOAD_DIR/palpable.tar.gz" "$url"; then
-        cd "$PALPABLE_DIR"
-        tar xzf "$DOWNLOAD_DIR/palpable.tar.gz" --strip-components=1
-        rm -rf "$DOWNLOAD_DIR"
-        log_ok "Installed from main branch"
-        return 0
-    else
-        log_error "Failed to download Palpable OS"
-        return 1
-    fi
+    install_palpable_os
+    return $?
 }
 
 # Install Node.js runtime (for Alpine Linux)

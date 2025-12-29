@@ -241,39 +241,59 @@ create_initramfs() {
     print_ok "Initramfs created: $(du -h "$DIST_DIR/initramfs.cpio.gz" | cut -f1)"
 }
 
-# Download latest Palpable OS release for offline install
+# Download latest Palpable runtime for offline install
 download_palpable_os() {
-    print_step "Downloading latest Palpable OS release..."
+    print_step "Downloading Palpable runtime for offline install..."
 
-    local palpable_dir="$BUILD_DIR/palpable-os"
+    local palpable_dir="$BUILD_DIR/palpable-runtime"
     mkdir -p "$palpable_dir"
 
-    # Try to get latest release from GitHub
-    local release_url="https://api.github.com/repos/epode-studio/palpable-os/releases/latest"
+    # Download main palpable repo and extract palpable-runtime
+    local repo="epode-studio/palpable"
+    local release_url="https://api.github.com/repos/${repo}/releases/latest"
     local release_json=$(curl -fsSL "$release_url" 2>/dev/null)
 
-    if [ -n "$release_json" ]; then
-        local tag=$(echo "$release_json" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-        local download_url=$(echo "$release_json" | grep '"browser_download_url"' | grep -E '\.(tar\.gz|zip)"' | head -1 | cut -d'"' -f4)
+    local tag=""
+    local download_url=""
 
-        if [ -n "$download_url" ]; then
-            print_info "Downloading $tag from release..."
-            curl -fsSL -o "$palpable_dir/palpable-os.tar.gz" "$download_url"
+    if [ -n "$release_json" ]; then
+        tag=$(echo "$release_json" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+        # Check for palpable-runtime specific release asset
+        download_url=$(echo "$release_json" | grep '"browser_download_url"' | grep 'palpable-runtime' | head -1 | cut -d'"' -f4)
+    fi
+
+    # Fallback to main branch source tarball
+    if [ -z "$download_url" ]; then
+        download_url="https://github.com/${repo}/archive/refs/heads/main.tar.gz"
+        tag="main"
+    fi
+
+    print_info "Downloading from $tag..."
+    local tmp_dir="$BUILD_DIR/tmp-download"
+    mkdir -p "$tmp_dir"
+
+    if curl -fsSL -o "$tmp_dir/palpable.tar.gz" "$download_url"; then
+        # Extract and find palpable-runtime folder
+        cd "$tmp_dir"
+        tar xzf palpable.tar.gz
+
+        local runtime_src=$(find . -type d -name "palpable-runtime" | head -1)
+        if [ -n "$runtime_src" ] && [ -d "$runtime_src" ]; then
+            # Create tarball of just the runtime
+            cd "$runtime_src"
+            tar czf "$palpable_dir/palpable-runtime.tar.gz" .
+            print_ok "Extracted palpable-runtime"
         else
-            # Fallback to source tarball
-            download_url="https://github.com/epode-studio/palpable-os/archive/refs/tags/${tag}.tar.gz"
-            print_info "Downloading $tag source tarball..."
-            curl -fsSL -o "$palpable_dir/palpable-os.tar.gz" "$download_url"
+            print_warning "palpable-runtime folder not found, bundling full archive"
+            cp "$tmp_dir/palpable.tar.gz" "$palpable_dir/palpable-runtime.tar.gz"
         fi
+
         echo "$tag" > "$palpable_dir/version.txt"
-        print_ok "Downloaded Palpable OS $tag"
+        rm -rf "$tmp_dir"
+        print_ok "Downloaded Palpable runtime ($tag)"
     else
-        # Fallback to main branch
-        print_warning "No release found, downloading main branch..."
-        curl -fsSL -o "$palpable_dir/palpable-os.tar.gz" \
-            "https://github.com/epode-studio/palpable-os/archive/refs/heads/main.tar.gz"
-        echo "main" > "$palpable_dir/version.txt"
-        print_ok "Downloaded Palpable OS (main branch)"
+        print_warning "Could not download Palpable runtime - will download at boot"
+        rm -rf "$tmp_dir"
     fi
 }
 
@@ -299,11 +319,11 @@ assemble_boot() {
     cp "$USER_FILES_DIR/settings.txt" "$DIST_DIR/"
     cp "$USER_FILES_DIR/version.txt" "$DIST_DIR/"
 
-    # Copy bundled Palpable OS (for offline install)
-    if [ -f "$BUILD_DIR/palpable-os/palpable-os.tar.gz" ]; then
-        cp "$BUILD_DIR/palpable-os/palpable-os.tar.gz" "$DIST_DIR/"
-        cp "$BUILD_DIR/palpable-os/version.txt" "$DIST_DIR/palpable-os-version.txt"
-        print_ok "Bundled Palpable OS included"
+    # Copy bundled Palpable runtime (for offline install)
+    if [ -f "$BUILD_DIR/palpable-runtime/palpable-runtime.tar.gz" ]; then
+        cp "$BUILD_DIR/palpable-runtime/palpable-runtime.tar.gz" "$DIST_DIR/"
+        cp "$BUILD_DIR/palpable-runtime/version.txt" "$DIST_DIR/palpable-runtime-version.txt"
+        print_ok "Bundled Palpable runtime included"
     fi
 
     print_ok "Boot files assembled"
@@ -333,6 +353,12 @@ create_zip() {
         "START HERE.txt" \
         version.txt \
         2>/dev/null || true
+
+    # Add bundled runtime for offline install (if available)
+    if [ -f palpable-runtime.tar.gz ]; then
+        zip -j "$output" palpable-runtime.tar.gz palpable-runtime-version.txt 2>/dev/null || true
+        print_info "Bundled offline runtime included"
+    fi
 
     # Add README inside zip
     cat > /tmp/README.txt << 'EOF'
